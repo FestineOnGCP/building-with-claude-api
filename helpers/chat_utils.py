@@ -23,12 +23,18 @@ def add_assistant_message(messages, text):
     messages.append(assistant_message)
 
 
-def chat(messages, model="claude-sonnet-5", max_tokens=1000):
-    response = client.messages.create(
-        model = model,
-        max_tokens = max_tokens,
-        messages = messages
-    )
+def chat(messages, system=None):
+    params = {
+        # "model": "claude-sonnet-5",
+        "model": "qwen2.5:3b",
+        "max_tokens": 1000,
+        "messages": messages
+    }
+
+    if system:
+        params["system"] = system
+
+    response = client.messages.create(**params)
     for block in response.content:
         if block.type == "text":
             return block.text
