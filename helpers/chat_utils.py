@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+from statistics import mean
 
 from anthropic import Anthropic
 from dotenv import load_dotenv
@@ -75,7 +76,10 @@ def chat_stream(messages, system=None, temperature=1.0, stop_sequences=None, sta
             live.update(Markdown(full_text))
     return full_text
 
+# Prompt evaluation functions
+
 def generate_dataset(user_prompt, output_dir=None):
+    """Take a user prompt describing what kind of dataset to generate and an optional destination where the file should be created"""
     prompt = user_prompt
     messages = []
     add_user_message(messages, prompt)
@@ -92,4 +96,79 @@ def generate_dataset(user_prompt, output_dir=None):
     print(f"File Path: {file_path}")
 
     with file_path.open("w", encoding="utf-8") as f:
+        response = json.loads(response) # Converts the returned json string to an object.
         json.dump(response, f, indent=2)
+
+def run_prompt(test_case):
+    """Take in a test case, input it into the prompt, and call Claude to execute this prompt"""
+
+    prompt = f"""
+        Please, solve the following task:
+        {test_case["task"]}
+    """
+    messages = []
+    add_user_message(messages, prompt)
+    output = chat(messages)
+
+    return output
+
+def grade_by_model(test_case, model_output):
+    """Takes both the test case and the output from the model. Define the evaluation criteria and infuse this parameters into it.
+    Then, send this evaluation criteria to Claude to grade the quality of the score.
+    """
+
+    eval_prompt = f"""
+        You are an expert code reviewer. Evaluate this AI-generated solution.
+        
+        Task: {test_case["task"]}
+        Solution: {model_output}
+        
+        Provide your evaluation as a structured JSON object with:
+        - "strengths": An array of 1-3 key strengths
+        - "weaknesses": An array of 1-3 key areas for improvement  
+        - "reasoning": A concise explanation of your assessment
+        - "score": A number between 1-10
+    """
+
+    messages = []
+    add_user_message(messages, eval_prompt)
+    add_assistant_message(messages, "```JSON")
+    eval_result = chat(messages, stop_sequences=["```"])
+
+    return eval_result
+
+def eval_test_case(test_case):
+    """Calls the run_prompt() to get a test case Claude output, Grade this output, and return the result set"""
+
+    output = run_prompt(test_case)
+
+    # Grade by model result
+    eval_result = grade_by_model(test_case, output)
+    eval_result = json.loads(eval_result)
+    
+    # eval_result = json.loads(eval_result)
+    result = {
+        "output": output,
+        "score": eval_result["score"],
+        "reasoning": eval_result["reasoning"],
+        "strengths": eval_result["strengths"],
+        "test_case": test_case["task"]
+    }
+
+    return result
+
+def run_eval(dataset):
+    """This goes through all the items on a dataset and calls the eval_test_case() for each of the test case defined within
+    the dataset"""
+
+    results = []
+
+    for test_case in dataset:
+        result = eval_test_case(test_case)
+        results.append(result)
+
+    average_score = mean([result["score"] for result in results])
+
+    print(f"\nThe average score for the prompt is {average_score}\n")
+
+    return results
