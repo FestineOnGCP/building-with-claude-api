@@ -1,11 +1,17 @@
 [
   {
-    "task": "Generate a Python function that takes a list of integers and returns a dictionary where keys are integers and values are the squared values of the keys."
+    "task": "Generate a list of all AWS regions.",
+    "format": "python",
+    "solution_criteria": "The function must return a list of region names and abbreviations."
   },
   {
-    "task": "Create a single JSON object representing a simple AWS Lambda event with a single key-value pair indicating the function name."
+    "task": "Create a JSON object containing AWS EC2 instance information.",
+    "format": "json",
+    "solution_criteria": "The JSON must contain at least 5 instances with 'name', 'status', and 'region' fields."
   },
   {
-    "task": "Design a regular expression to match and extract email addresses from a simple text string."
+    "task": "Find all instances running in the 'us-east-1' region using a regex.",
+    "format": "regex",
+    "solution_criteria": "The regex must match lines containing 'Region: us-east-1', 'Status: Running'."
   }
 ]

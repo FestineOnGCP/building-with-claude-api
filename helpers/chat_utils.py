@@ -1,7 +1,9 @@
 # Import statements
+import ast
 import json
 import os
 from pathlib import Path
+import re
 from statistics import mean
 
 from anthropic import Anthropic
@@ -99,16 +101,67 @@ def generate_dataset(user_prompt, output_dir=None):
         response = json.loads(response) # Converts the returned json string to an object.
         json.dump(response, f, indent=2)
 
+def validate_python(text):
+    try:
+        ast.parse(text.strip())
+        return 10
+    except SyntaxError:
+        return 0
+
+def validate_json(text):
+    try:
+        json.loads(text.strip())
+        return 10
+    except json.JSONDecodeError:
+        return 0
+
+def validate_regex(text):
+    try:
+        re.compile(re.sub(r",\s*([\]}])", r"\1", text.strip()))
+        return 10
+    except re.error:
+        return 0
+
+def grade_by_code(test_case, output):
+    if test_case["format"] == "python":
+        return validate_python(output)
+    elif test_case["format"] == "json":
+        return validate_json(output)
+    elif test_case["format"] == "regex":
+        return validate_regex(output)
+    else:
+        return 0
+    
+
 def run_prompt(test_case):
     """Take in a test case, input it into the prompt, and call Claude to execute this prompt"""
 
     prompt = f"""
         Please, solve the following task:
+        The task to be completed
+        <task>
         {test_case["task"]}
+        </task>
+
+        The format which you should return the solution as:
+        <format>
+        {test_case["format"]}
+        </format>
+
+        Adhere to the below solution criteria when providing the solution:
+        <solution_criteria>
+        {test_case["solution_criteria"]}
+        </solution_criteria>
+
+        * Respond only with Python, JSON, or a regular expression code block.
+        * For the json and regex task, do not give me their python implementation. Just the their code block response is needed.
+        * For the python task, give me the python implementation code block.
+        * Do not add any comments or commentary or explanation.
     """
     messages = []
     add_user_message(messages, prompt)
-    output = chat(messages)
+    add_assistant_message(messages, "```code")
+    output = chat(messages, stop_sequences=["```"])
 
     return output
 
@@ -120,8 +173,22 @@ def grade_by_model(test_case, model_output):
     eval_prompt = f"""
         You are an expert code reviewer. Evaluate this AI-generated solution.
         
-        Task: {test_case["task"]}
-        Solution: {model_output}
+        Task to be completed: 
+        <task>
+        {test_case["task"]}
+        </task>
+
+        Solution for the task to evaluate:
+        <solution>
+        {model_output}
+        </solution>
+
+        Solution Criteria to be considered when evaluating the solution against the task:
+        <solution_criteria>
+        {test_case["solution_criteria"]}
+        </solution_criteria>
+
+        * Do not use double quotes inside string values. Use single quotes instead, and do not include line breaks inside strings.
         
         Provide your evaluation as a structured JSON object with:
         - "strengths": An array of 1-3 key strengths
@@ -132,10 +199,11 @@ def grade_by_model(test_case, model_output):
 
     messages = []
     add_user_message(messages, eval_prompt)
-    add_assistant_message(messages, "```JSON")
+    add_assistant_message(messages, "```json")
     eval_result = chat(messages, stop_sequences=["```"])
-
-    return eval_result
+    # eval_result = re.sub(r",\s*([\]}])", r"\1", eval_result.strip())
+   
+    return json.loads(eval_result, strict=False)
 
 def eval_test_case(test_case):
     """Calls the run_prompt() to get a test case Claude output, Grade this output, and return the result set"""
@@ -144,14 +212,20 @@ def eval_test_case(test_case):
 
     # Grade by model result
     eval_result = grade_by_model(test_case, output)
-    eval_result = json.loads(eval_result)
-    
+    model_score = eval_result["score"]
+    model_reasoning = eval_result["reasoning"]
+    prompt_strengths = eval_result["strengths"]
+
+    # Grade by code results
+    code_score = grade_by_code(test_case, output)
+    print(code_score)
+    score = (model_score + code_score) / 2
     # eval_result = json.loads(eval_result)
     result = {
         "output": output,
-        "score": eval_result["score"],
-        "reasoning": eval_result["reasoning"],
-        "strengths": eval_result["strengths"],
+        "score": score,
+        "reasoning": model_reasoning,
+        "strengths": prompt_strengths,
         "test_case": test_case["task"]
     }
 

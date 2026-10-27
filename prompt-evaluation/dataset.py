@@ -12,6 +12,8 @@ Example output:
 [
     {
         "task": "Description of task",
+        "format": "python" or "json" or "regex",
+        "solution_criteria": "Must include a solution criteria which must be fulfilled before this task can be accepted as done. This is is sort of like a constraint"
     },
     ...additional
 ]
